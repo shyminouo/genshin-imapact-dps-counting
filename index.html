@@ -1,0 +1,1097 @@
+<!DOCTYPE html>
+<html lang="zh-TW" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>《原神》隊伍 2-Rotation DPS 與時間軸排軸計算器 v2.0</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        genshin: {
+                            dark: '#121824',
+                            card: '#1e293b',
+                            border: '#334155',
+                            gold: '#ece5d8',
+                            pyro: '#ef4444',
+                            hydro: '#3b82f6',
+                            anemo: '#10b981',
+                            electro: '#a855f7',
+                            dendro: '#22c55e',
+                            cryo: '#06b6d4',
+                            geo: '#eab308',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Custom scrollbar & timeline styling */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0f172a;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #475569;
+        }
+        .timeline-grid {
+            background-size: 20px 100%;
+            background-image: linear-gradient(to right, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+        }
+        .draggable-block {
+            cursor: grab;
+            user-select: none;
+            touch-action: none;
+        }
+        .draggable-block:active {
+            cursor: grabbing;
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen font-sans pb-12">
+
+    <!-- Top Navigation Header -->
+    <header class="bg-slate-900/90 border-b border-slate-800 sticky top-0 z-50 backdrop-blur-md">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap justify-between items-center gap-4">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-500 to-yellow-300 flex items-center justify-center font-bold text-slate-950 text-xl shadow-lg shadow-amber-500/20">
+                    原
+                </div>
+                <div>
+                    <h1 class="text-lg font-bold text-slate-100 tracking-wide">原神隊伍 2-Rotation DPS 與時間軸排軸計算器</h1>
+                    <p class="text-xs text-slate-400">v2.0 完整版 — 含劇變/月曜/星鑠反應、雙輪 40s 排軸與動態 Buff 覆蓋</p>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-2">
+                <button id="btn-load-preset" class="px-3 py-1.5 text-xs font-medium rounded-lg bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-300 border border-indigo-500/30 transition">
+                    ⚡ 載入預設隊伍 (雷九萬班)
+                </button>
+                <button id="btn-reset" class="px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition">
+                    🔄 重置數據
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 mt-6 space-y-6">
+
+        <!-- DASHBOARD SECTION: Top Key Metrics -->
+        <section class="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div class="bg-gradient-to-br from-slate-900 to-amber-950/40 border border-amber-500/30 rounded-2xl p-4 shadow-xl">
+                <div class="text-xs font-medium text-amber-400/80 uppercase tracking-wider">隊伍平均 DPS (Team DPS)</div>
+                <div id="metric-team-dps" class="text-3xl font-extrabold text-amber-300 mt-1">0</div>
+                <div class="text-xs text-slate-400 mt-1">傷害總和 ÷ 循環時間 (<span id="metric-rotation-time-display">40</span>s)</div>
+            </div>
+
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg">
+                <div class="text-xs font-medium text-slate-400 uppercase tracking-wider">2 輪總傷害 (DPR)</div>
+                <div id="metric-total-dpr" class="text-2xl font-bold text-slate-100 mt-1">0</div>
+                <div class="text-xs text-slate-500 mt-1">包含直傷、反應與劇變傷害</div>
+            </div>
+
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg">
+                <div class="text-xs font-medium text-slate-400 uppercase tracking-wider">主要 DPS 角色貢獻度</div>
+                <div id="metric-top-dps" class="text-lg font-bold text-amber-400 mt-1">無數據</div>
+                <div id="metric-top-dps-share" class="text-xs text-slate-400 mt-1">占比: 0%</div>
+            </div>
+
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg">
+                <div class="text-xs font-medium text-slate-400 uppercase tracking-wider">核心 Buff 平均覆蓋率</div>
+                <div id="metric-buff-coverage" class="text-2xl font-bold text-emerald-400 mt-1">0%</div>
+                <div class="text-xs text-slate-500 mt-1">對主 C 輸出軸之生效比例</div>
+            </div>
+        </section>
+
+        <!-- TIMELINE SECTION: Visual Gantt-like Draggable Rotation Board -->
+        <section class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
+            <div class="flex flex-wrap justify-between items-center pb-4 border-b border-slate-800 gap-4">
+                <div>
+                    <h2 class="text-base font-bold text-slate-100 flex items-center gap-2">
+                        <span>⏱️ 隊伍循環軸與 Buff 時間軸管理器 (40s / 2 Rotations)</span>
+                    </h2>
+                    <p class="text-xs text-slate-400 mt-0.5">點擊或拖移可調整角色登場時間與 Buff 起始點，系統即時動態計算 Hit 觸發時的 Buff 覆蓋</p>
+                </div>
+                <div class="flex items-center gap-4 text-xs">
+                    <div class="flex items-center gap-1.5">
+                        <label class="text-slate-400">循環總時長(s):</label>
+                        <input type="number" id="input-rotation-time" value="40" min="20" max="60" class="w-16 bg-slate-950 border border-slate-700 rounded px-2 py-1 text-center text-amber-400 font-bold focus:outline-none focus:border-amber-500">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Timeline Ruler & Grid -->
+            <div class="mt-4 overflow-x-auto">
+                <div class="min-w-[800px] relative select-none">
+                    <!-- Timeline Time Markers Header -->
+                    <div id="timeline-ruler" class="h-6 flex text-[10px] text-slate-500 border-b border-slate-800 font-mono">
+                        <!-- Populated by JS -->
+                    </div>
+
+                    <!-- Timeline Rows for 4 Characters -->
+                    <div id="timeline-rows-container" class="space-y-3 mt-3">
+                        <!-- Populated dynamically by JS -->
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- TEAM CONFIGURATION & STATS INPUTS -->
+        <section class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+            
+            <!-- Character 1 (Main DPS) -->
+            <div class="character-card bg-slate-900 border-2 border-amber-500/40 rounded-2xl p-4 shadow-lg relative" data-char-index="0">
+                <div class="flex justify-between items-center mb-3">
+                    <div class="flex items-center gap-2">
+                        <span class="w-3 h-3 rounded-full bg-amber-400"></span>
+                        <input type="text" class="char-name font-bold bg-transparent border-b border-dashed border-slate-600 focus:border-amber-400 focus:outline-none text-slate-100 text-sm" value="雷電將軍 (主C)">
+                    </div>
+                    <span class="text-[10px] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded font-mono">Pos 1</span>
+                </div>
+
+                <!-- Element & Scaling Type -->
+                <div class="grid grid-cols-2 gap-2 text-xs mb-3">
+                    <div>
+                        <label class="text-slate-400 block mb-1">屬性</label>
+                        <select class="char-element w-full bg-slate-950 border border-slate-700 rounded px-2 py-1 text-slate-200">
+                            <option value="electro" selected>雷 (Electro)</option>
+                            <option value="pyro">火 (Pyro)</option>
+                            <option value="hydro">水 (Hydro)</option>
+                            <option value="anemo">風 (Anemo)</option>
+                            <option value="dendro">草 (Dendro)</option>
+                            <option value="cryo">冰 (Cryo)</option>
+                            <option value="geo">岩 (Geo)</option>
+                            <option value="physical">物理 (Physical)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="text-slate-400 block mb-1">主要吃傷屬性</label>
+                        <select class="char-scaling w-full bg-slate-950 border border-slate-700 rounded px-2 py-1 text-slate-200">
+                            <option value="ATK" selected>攻擊力 (ATK)</option>
+                            <option value="HP">生命值 (HP)</option>
+                            <option value="DEF">防禦力 (DEF)</option>
+                            <option value="EM">元素精通 (EM)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Talent Levels & Base Stats -->
+                <div class="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80 mb-3 space-y-2 text-xs">
+                    <div class="font-semibold text-slate-300 border-b border-slate-800 pb-1">基礎與天賦等級</div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <span class="text-slate-400">基礎攻擊力:</span>
+                            <input type="number" class="char-base-atk w-full bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-right font-mono" value="940">
+                        </div>
+                        <div>
+                            <span class="text-slate-400">角色等級:</span>
+                            <input type="number" class="char-level w-full bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-right font-mono" value="90">
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-3 gap-1">
+                        <div>
+                            <span class="text-slate-400 text-[10px]">A 等級</span>
+                            <input type="number" class="char-talent-a w-full bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-center font-mono" value="6">
+                        </div>
+                        <div>
+                            <span class="text-slate-400 text-[10px]">E 等級</span>
+                            <input type="number" class="char-talent-e w-full bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-center font-mono" value="9">
+                        </div>
+                        <div>
+                            <span class="text-slate-400 text-[10px]">Q 等級</span>
+                            <input type="number" class="char-talent-q w-full bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-center font-mono" value="10">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Substats / Panel Stats -->
+                <div class="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80 mb-3 space-y-2 text-xs">
+                    <div class="font-semibold text-slate-300 border-b border-slate-800 pb-1">聖遺物與面板屬性 (面板/副詞條)</div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <span class="text-slate-400">攻擊力%:</span>
+                            <input type="number" class="stat-atk-pct w-full bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-right font-mono" value="46.6">
+                        </div>
+                        <div>
+                            <span class="text-slate-400">固定攻擊:</span>
+                            <input type="number" class="stat-flat-atk w-full bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-right font-mono" value="311">
+                        </div>
+                        <div>
+                            <span class="text-slate-400">暴擊率%:</span>
+                            <input type="number" class="stat-crit-rate w-full bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-right font-mono" value="65.0">
+                        </div>
+                        <div>
+                            <span class="text-slate-400">暴擊傷害%:</span>
+                            <input type="number" class="stat-crit-dmg w-full bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-right font-mono" value="150.0">
+                        </div>
+                        <div>
+                            <span class="text-slate-400">增傷加成%:</span>
+                            <input type="number" class="stat-dmg-bonus w-full bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-right font-mono" value="75.0">
+                        </div>
+                        <div>
+                            <span class="text-slate-400">元素精通(EM):</span>
+                            <input type="number" class="stat-em w-full bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-right font-mono" value="50">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Attack Actions & Multipliers for this Rotation -->
+                <div class="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80 text-xs space-y-2">
+                    <div class="font-semibold text-slate-300 border-b border-slate-800 pb-1 flex justify-between items-center">
+                        <span>技能輸出 Hit 設定 (每輪)</span>
+                        <button class="btn-add-hit text-[10px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded hover:bg-amber-500/40">
+                            + 新增 Hit
+                        </button>
+                    </div>
+                    <div class="hits-container space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Character 2 (Support A) -->
+            <div class="character-card bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg relative" data-char-index="1">
+                <div class="flex justify-between items-center mb-3">
+                    <div class="flex items-center gap-2">
+                        <span class="w-3 h-3 rounded-full bg-purple-400"></span>
+                        <input type="text" class="char-name font-bold bg-transparent border-b border-dashed border-slate-600 focus:border-amber-400 focus:outline-none text-slate-100 text-sm" value="九條裟羅 (副C/Buff)">
+                    </div>
+                    <span class="text-[10px] bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded font-mono">Pos 2</span>
+                </div>
+
+                <div class="grid grid-cols-2 gap-2 text-xs mb-3">
+                    <div>
+                        <label class="text-slate-400 block mb-1">屬性</label>
+                        <select class="char-element w-full bg-slate-950 border border-slate-700 rounded px-2 py-1 text-slate-200">
+                            <option value="electro" selected>雷 (Electro)</option>
+                            <option value="pyro">火 (Pyro)</option>
+                            <option value="hydro">水 (Hydro)</option>
+                            <option value="anemo">風 (Anemo)</option>
+                            <option value="dendro">草 (Dendro)</option>
+                            <option value="cryo">冰 (Cryo)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="text-slate-400 block mb-1">主要吃傷屬性</label>
+                        <select class="char-scaling w-full bg-slate-950 border border-slate-700 rounded px-2 py-1 text-slate-200">
+                            <option value="ATK" selected>攻擊力 (ATK)</option>
+                            <option value="HP">生命值 (HP)</option>
+                            <option value="DEF">防禦力 (DEF)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80 mb-3 space-y-2 text-xs">
+                    <div class="font-semibold text-slate-300 border-b border-slate-800 pb-1">基礎與天賦等級</div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <span class="text-slate-400">基礎攻擊力:</span>
+                            <input type="number" class="char-base-atk w-full bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-right font-mono" value="790">
+                        </div>
+                        <div>
+                            <span class="text-slate-400">角色等級:</span>
+                            <input type="number" class="char-level w-full bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-right font-mono" value="90">
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-3 gap-1">
+                        <div>
+                            <span class="text-slate-400 text-[10px]">A 等級</span>
+                            <input type="number" class="char-talent-a w-full bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-center font-mono" value="1">
+                        </div>
+                        <div>
+                            <span class="text-slate-400 text-[10px]">E 等級</span>
+                            <input type="number" class="char-talent-e w-full bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-center font-mono" value="12">
+                        </div>
+                        <div>
+                            <span class="text-slate-400 text-[10px]">Q 等級</span>
+                            <input type="number" class="char-talent-q w-full bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-center font-mono" value="12">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80 mb-3 space-y-2 text-xs">
+                    <div class="font-semibold text-slate-300 border-b border-slate-800 pb-1">面板屬性</div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <span class="text-slate-400">攻擊力%:</span>
+                            <input type="number" class="stat-atk-pct w-full bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-right font-mono" value="20.0">
+                        </div>
+                        <div>
+                            <span class="text-slate-400">固定攻擊:</span>
+                            <input type="number" class="stat-flat-atk w-full bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-right font-mono" value="311">
+                        </div>
+                        <div>
+                            <span class="text-slate-400">暴擊率%:</span>
+                            <input type="number" class="stat-crit-rate w-full bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-right font-mono" value="50.0">
+                        </div>
+                        <div>
+                            <span class="text-slate-400">暴擊傷害%:</span>
+                            <input type="number" class="stat-crit-dmg w-full bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-right font-mono" value="120.0">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80 text-xs space-y-2">
+                    <div class="font-semibold text-slate-300 border-b border-slate-800 pb-1 flex justify-between items-center">
+                        <span>技能輸出 Hit 設定</span>
+                        <button class="btn-add-hit text-[10px] bg-purple-500/20 text-purple-300 px-1.5 py-0.5 rounded hover:bg-purple-500/40">
+                            + 新增 Hit
+                        </button>
+                    </div>
+                    <div class="hits-container space-y-1.5 max-h-48 overflow-y-auto pr-1"></div>
+                </div>
+            </div>
+
+            <!-- Character 3 (Support B) -->
+            <div class="character-card bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg relative" data-char-index="2">
+                <div class="flex justify-between items-center mb-3">
+                    <div class="flex items-center gap-2">
+                        <span class="w-3 h-3 rounded-full bg-emerald-400"></span>
+                        <input type="text" class="char-name font-bold bg-transparent border-b border-dashed border-slate-600 focus:border-amber-400 focus:outline-none text-slate-100 text-sm" value="楓原萬葉 (風套/增傷)">
+                    </div>
+                    <span class="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded font-mono">Pos 3</span>
+                </div>
+
+                <div class="grid grid-cols-2 gap-2 text-xs mb-3">
+                    <div>
+                        <label class="text-slate-400 block mb-1">屬性</label>
+                        <select class="char-element w-full bg-slate-950 border border-slate-700 rounded px-2 py-1 text-slate-200">
+                            <option value="anemo" selected>風 (Anemo)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="text-slate-400 block mb-1">主要吃傷屬性</label>
+                        <select class="char-scaling w-full bg-slate-950 border border-slate-700 rounded px-2 py-1 text-slate-200">
+                            <option value="EM" selected>元素精通 (EM)</option>
+                            <option value="ATK">攻擊力 (ATK)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80 mb-3 space-y-2 text-xs">
+                    <div class="font-semibold text-slate-300 border-b border-slate-800 pb-1">基礎與天賦等級</div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <span class="text-slate-400">基礎攻擊力:</span>
+                            <input type="number" class="char-base-atk w-full bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-right font-mono" value="800">
+                        </div>
+                        <div>
+                            <span class="text-slate-400">角色等級:</span>
+                            <input type="number" class="char-level w-full bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-right font-mono" value="90">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80 mb-3 space-y-2 text-xs">
+                    <div class="font-semibold text-slate-300 border-b border-slate-800 pb-1">面板屬性</div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <span class="text-slate-400">元素精通(EM):</span>
+                            <input type="number" class="stat-em w-full bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-right font-mono" value="950">
+                        </div>
+                        <div>
+                            <span class="text-slate-400">暴擊率%:</span>
+                            <input type="number" class="stat-crit-rate w-full bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-right font-mono" value="15.0">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80 text-xs space-y-2">
+                    <div class="font-semibold text-slate-300 border-b border-slate-800 pb-1 flex justify-between items-center">
+                        <span>技能輸出 Hit 設定</span>
+                        <button class="btn-add-hit text-[10px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded hover:bg-emerald-500/40">
+                            + 新增 Hit
+                        </button>
+                    </div>
+                    <div class="hits-container space-y-1.5 max-h-48 overflow-y-auto pr-1"></div>
+                </div>
+            </div>
+
+            <!-- Character 4 (Support C) -->
+            <div class="character-card bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg relative" data-char-index="3">
+                <div class="flex justify-between items-center mb-3">
+                    <div class="flex items-center gap-2">
+                        <span class="w-3 h-3 rounded-full bg-red-400"></span>
+                        <input type="text" class="char-name font-bold bg-transparent border-b border-dashed border-slate-600 focus:border-amber-400 focus:outline-none text-slate-100 text-sm" value="班尼特 (宗室/大招Buff)">
+                    </div>
+                    <span class="text-[10px] bg-red-500/20 text-red-300 px-2 py-0.5 rounded font-mono">Pos 4</span>
+                </div>
+
+                <div class="grid grid-cols-2 gap-2 text-xs mb-3">
+                    <div>
+                        <label class="text-slate-400 block mb-1">屬性</label>
+                        <select class="char-element w-full bg-slate-950 border border-slate-700 rounded px-2 py-1 text-slate-200">
+                            <option value="pyro" selected>火 (Pyro)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="text-slate-400 block mb-1">主要吃傷屬性</label>
+                        <select class="char-scaling w-full bg-slate-950 border border-slate-700 rounded px-2 py-1 text-slate-200">
+                            <option value="ATK" selected>攻擊力 (ATK)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80 mb-3 space-y-2 text-xs">
+                    <div class="font-semibold text-slate-300 border-b border-slate-800 pb-1">基礎與天賦等級</div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <span class="text-slate-400">白值攻擊(Base):</span>
+                            <input type="number" class="char-base-atk w-full bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-right font-mono" value="865">
+                        </div>
+                        <div>
+                            <span class="text-slate-400">角色等級:</span>
+                            <input type="number" class="char-level w-full bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-right font-mono" value="90">
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-3 gap-1">
+                        <div>
+                            <span class="text-slate-400 text-[10px]">A 等級</span>
+                            <input type="number" class="char-talent-a w-full bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-center font-mono" value="1">
+                        </div>
+                        <div>
+                            <span class="text-slate-400 text-[10px]">E 等級</span>
+                            <input type="number" class="char-talent-e w-full bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-center font-mono" value="8">
+                        </div>
+                        <div>
+                            <span class="text-slate-400 text-[10px]">Q 等級</span>
+                            <input type="number" class="char-talent-q w-full bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-center font-mono" value="13">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80 mb-3 space-y-2 text-xs">
+                    <div class="font-semibold text-slate-300 border-b border-slate-800 pb-1">面板屬性</div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <span class="text-slate-400">固定攻擊:</span>
+                            <input type="number" class="stat-flat-atk w-full bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-right font-mono" value="311">
+                        </div>
+                        <div>
+                            <span class="text-slate-400">暴擊率%:</span>
+                            <input type="number" class="stat-crit-rate w-full bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-right font-mono" value="40.0">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80 text-xs space-y-2">
+                    <div class="font-semibold text-slate-300 border-b border-slate-800 pb-1 flex justify-between items-center">
+                        <span>技能輸出 Hit 設定</span>
+                        <button class="btn-add-hit text-[10px] bg-red-500/20 text-red-300 px-1.5 py-0.5 rounded hover:bg-red-500/40">
+                            + 新增 Hit
+                        </button>
+                    </div>
+                    <div class="hits-container space-y-1.5 max-h-48 overflow-y-auto pr-1"></div>
+                </div>
+            </div>
+
+        </section>
+
+        <!-- ENEMY & BUFF / REACTION CONFIGURATION -->
+        <section class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            
+            <!-- Enemy Settings -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg space-y-3">
+                <h3 class="text-sm font-bold text-slate-200 flex items-center gap-2">
+                    <span>👾 敵方目標設定</span>
+                </h3>
+                <div class="grid grid-cols-2 gap-3 text-xs">
+                    <div>
+                        <label class="text-slate-400 block mb-1">怪物等級</label>
+                        <input type="number" id="enemy-level" value="90" class="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1 text-slate-100 font-mono">
+                    </div>
+                    <div>
+                        <label class="text-slate-400 block mb-1">基礎元素/物理抗性%</label>
+                        <input type="number" id="enemy-res" value="10" class="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1 text-slate-100 font-mono">
+                    </div>
+                    <div>
+                        <label class="text-slate-400 block mb-1">額外減防% (Def Shred)</label>
+                        <input type="number" id="enemy-def-shred" value="0" class="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1 text-slate-100 font-mono">
+                    </div>
+                    <div>
+                        <label class="text-slate-400 block mb-1">額外減抗% (Res Shred)</label>
+                        <input type="number" id="enemy-res-shred" value="0" class="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1 text-slate-100 font-mono">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Global Team Buffs & Resonance -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg space-y-3">
+                <h3 class="text-sm font-bold text-slate-200 flex items-center gap-2">
+                    <span>🛡️ 全隊 Buff 與元素共鳴</span>
+                </h3>
+                <div class="space-y-2 text-xs">
+                    <label class="flex items-center gap-2 text-slate-300 cursor-pointer">
+                        <input type="checkbox" id="buff-pyro-res" checked class="rounded bg-slate-950 border-slate-700 text-amber-500 focus:ring-0">
+                        <span>雙火共鳴 (+25% 攻擊力)</span>
+                    </label>
+                    <label class="flex items-center gap-2 text-slate-300 cursor-pointer">
+                        <input type="checkbox" id="buff-noblesse" checked class="rounded bg-slate-950 border-slate-700 text-amber-500 focus:ring-0">
+                        <span>宗室 4 件套 (+20% 全隊攻擊力)</span>
+                    </label>
+                    <label class="flex items-center gap-2 text-slate-300 cursor-pointer">
+                        <input type="checkbox" id="buff-viridescent" checked class="rounded bg-slate-950 border-slate-700 text-amber-500 focus:ring-0">
+                        <span>翠綠之影 4 件套 (-40% 擴散元素抗性)</span>
+                    </label>
+                    <label class="flex items-center gap-2 text-slate-300 cursor-pointer">
+                        <input type="checkbox" id="buff-thrilling" class="rounded bg-slate-950 border-slate-700 text-amber-500 focus:ring-0">
+                        <span>討龍英傑譚 (+48% 登場角色攻擊力)</span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Reaction Multipliers (Including Lunar & Starspark) -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg space-y-3">
+                <h3 class="text-sm font-bold text-slate-200 flex items-center gap-2">
+                    <span>✨ 特殊與全反應開關 (含月曜 / 星鑠)</span>
+                </h3>
+                <div class="space-y-2 text-xs">
+                    <label class="flex items-center justify-between text-slate-300">
+                        <span>月曜反應 (Moontide) 額外倍率加成:</span>
+                        <input type="number" id="reaction-moontide-mult" value="1.25" step="0.05" class="w-16 bg-slate-950 border border-slate-700 rounded px-1.5 py-0.5 text-right font-mono text-cyan-300">
+                    </label>
+                    <label class="flex items-center justify-between text-slate-300">
+                        <span>星鑠反應 (Starspark) 基礎提升區:</span>
+                        <input type="number" id="reaction-starspark-flat" value="1800" step="100" class="w-20 bg-slate-950 border border-slate-700 rounded px-1.5 py-0.5 text-right font-mono text-amber-300">
+                    </label>
+                    <p class="text-[11px] text-slate-400 mt-1">
+                        劇變反應 (如超綻放、感電、擴散) 自動依據 90 級底數與觸發者 EM 計算。
+                    </p>
+                </div>
+            </div>
+
+        </section>
+
+        <!-- DETAILED DAMAGE BREAKDOWN TABLE -->
+        <section class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
+            <h2 class="text-base font-bold text-slate-100 mb-4 flex items-center justify-between">
+                <span>📊 2-Rotation 輸出明細與 Buff 覆蓋比對表</span>
+                <span class="text-xs text-slate-400 font-normal">每輪傷害已乘以 2 輪循環</span>
+            </h2>
+            <div class="overflow-x-auto">
+                <table class="w-full text-xs text-left text-slate-300">
+                    <thead class="text-[11px] text-slate-400 uppercase bg-slate-950/80 border-b border-slate-800">
+                        <tr>
+                            <th class="px-3 py-2.5">角色</th>
+                            <th class="px-3 py-2.5">技能名稱 / 類型</th>
+                            <th class="px-3 py-2.5">時間點 (s)</th>
+                            <th class="px-3 py-2.5">天賦與倍率%</th>
+                            <th class="px-3 py-2.5">反應類型</th>
+                            <th class="px-3 py-2.5">生效中 Buff</th>
+                            <th class="px-3 py-2.5 text-right">未暴擊傷害</th>
+                            <th class="px-3 py-2.5 text-right">暴擊傷害</th>
+                            <th class="px-3 py-2.5 text-right text-amber-300">期望傷害 (Exp)</th>
+                            <th class="px-3 py-2.5 text-right text-indigo-300">2 輪總和</th>
+                        </tr>
+                    </thead>
+                    <tbody id="damage-table-body" class="divide-y divide-slate-800">
+                        <!-- Populated dynamically by JS -->
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Vanilla JavaScript Core Script -->
+    <script>
+        // Global State & Presets
+        const DEFAULT_PRESET = {
+            rotationTime: 40,
+            enemy: { level: 90, res: 10, defShred: 0, resShred: 0 },
+            buffs: { pyroRes: true, noblesse: true, viridescent: true, thrilling: false },
+            moontideMult: 1.25,
+            starsparkFlat: 1800,
+            characters: [
+                {
+                    name: '雷電將軍 (主C)',
+                    element: 'electro',
+                    scaling: 'ATK',
+                    level: 90,
+                    baseAtk: 940,
+                    talentA: 6, talentE: 9, talentQ: 10,
+                    atkPct: 46.6, flatAtk: 311, critRate: 65.0, critDmg: 150.0, dmgBonus: 75.0, em: 50,
+                    fieldStart: 12, fieldDuration: 10,
+                    hits: [
+                        { name: 'Q 夢想一刀 (首刀)', talentType: 'Q', multiplierPct: 721, timeSec: 12.5, reaction: 'none' },
+                        { name: 'Q 刀光連擊 (重擊x3)', talentType: 'Q', multiplierPct: 450, timeSec: 15.0, reaction: 'none' },
+                        { name: 'Q 刀光末段 (尾刀)', talentType: 'Q', multiplierPct: 320, timeSec: 18.5, reaction: 'none' }
+                    ]
+                },
+                {
+                    name: '九條裟羅 (副C/Buff)',
+                    element: 'electro',
+                    scaling: 'ATK',
+                    level: 90,
+                    baseAtk: 790,
+                    talentA: 1, talentE: 12, talentQ: 12,
+                    atkPct: 20.0, flatAtk: 311, critRate: 50.0, critDmg: 120.0, dmgBonus: 46.6, em: 0,
+                    fieldStart: 8, fieldDuration: 4,
+                    hits: [
+                        { name: 'Q 煌煌帝寮 (大招主雷)', talentType: 'Q', multiplierPct: 737, timeSec: 9.5, reaction: 'none' },
+                        { name: 'E 咒閃 (攻擊Buff)', talentType: 'E', multiplierPct: 148, timeSec: 8.5, reaction: 'none' }
+                    ]
+                },
+                {
+                    name: '楓原萬葉 (風套/增傷)',
+                    element: 'anemo',
+                    scaling: 'EM',
+                    level: 90,
+                    baseAtk: 800,
+                    talentA: 1, talentE: 8, talentQ: 8,
+                    atkPct: 0, flatAtk: 311, critRate: 15.0, critDmg: 90.0, dmgBonus: 0, em: 950,
+                    fieldStart: 4, fieldDuration: 4,
+                    hits: [
+                        { name: 'E 亂嵐撥止 (下落擴散)', talentType: 'E', multiplierPct: 400, timeSec: 5.0, reaction: 'swirl' },
+                        { name: 'Q 我流奧義 (風穴)', talentType: 'Q', multiplierPct: 440, timeSec: 6.0, reaction: 'swirl' }
+                    ]
+                },
+                {
+                    name: '班尼特 (宗室/大招Buff)',
+                    element: 'pyro',
+                    scaling: 'ATK',
+                    level: 90,
+                    baseAtk: 865,
+                    talentA: 1, talentE: 8, talentQ: 13,
+                    atkPct: 0, flatAtk: 311, critRate: 40.0, critDmg: 90.0, dmgBonus: 0, em: 0,
+                    fieldStart: 0, fieldDuration: 4,
+                    hits: [
+                        { name: 'Q 美妙旅程 (大招衝擊)', talentType: 'Q', multiplierPct: 495, timeSec: 1.0, reaction: 'none' }
+                    ]
+                }
+            ],
+            buffTimeline: [
+                { id: 'bennett_q', name: '班尼特 Q 領域 (+1000 ATK)', start: 1, duration: 12, color: 'bg-red-500/80' },
+                { id: 'sara_buff', name: '九條 E/Q 爆傷與攻擊Buff', start: 9, duration: 6, color: 'bg-purple-500/80' },
+                { id: 'vv_shred', name: '萬葉風套 4 件 (-40% 抗性)', start: 5, duration: 10, color: 'bg-emerald-500/80' }
+            ]
+        };
+
+        let state = JSON.parse(JSON.stringify(DEFAULT_PRESET));
+
+        // Initialization
+        document.addEventListener('DOMContentLoaded', () => {
+            renderTimeline();
+            renderCharacterHitsInputs();
+            calculateAndUpdate();
+            setupEventListeners();
+        });
+
+        function setupEventListeners() {
+            document.getElementById('btn-load-preset').addEventListener('click', () => {
+                state = JSON.parse(JSON.stringify(DEFAULT_PRESET));
+                renderTimeline();
+                renderCharacterHitsInputs();
+                calculateAndUpdate();
+            });
+
+            document.getElementById('btn-reset').addEventListener('click', () => {
+                state.characters.forEach(c => c.hits = []);
+                renderTimeline();
+                renderCharacterHitsInputs();
+                calculateAndUpdate();
+            });
+
+            document.getElementById('input-rotation-time').addEventListener('input', (e) => {
+                state.rotationTime = parseFloat(e.target.value) || 40;
+                document.getElementById('metric-rotation-time-display').textContent = state.rotationTime;
+                renderTimeline();
+                calculateAndUpdate();
+            });
+
+            // Enemy and global buff inputs
+            ['enemy-level', 'enemy-res', 'enemy-def-shred', 'enemy-res-shred'].forEach(id => {
+                document.getElementById(id).addEventListener('input', calculateAndUpdate);
+            });
+
+            ['buff-pyro-res', 'buff-noblesse', 'buff-viridescent', 'buff-thrilling'].forEach(id => {
+                document.getElementById(id).addEventListener('change', calculateAndUpdate);
+            });
+
+            ['reaction-moontide-mult', 'reaction-starspark-flat'].forEach(id => {
+                document.getElementById(id).addEventListener('input', calculateAndUpdate);
+            });
+        }
+
+        // Render Draggable / Adjustable Timeline
+        function renderTimeline() {
+            const ruler = document.getElementById('timeline-ruler');
+            const rowsContainer = document.getElementById('timeline-rows-container');
+            const rotTime = state.rotationTime;
+
+            // Ruler markers
+            let rulerHTML = '';
+            for (let i = 0; i <= rotTime; i += 2) {
+                const pct = (i / rotTime) * 100;
+                rulerHTML += `<div class="absolute" style="left: ${pct}%">${i}s</div>`;
+            }
+            ruler.innerHTML = rulerHTML;
+
+            // Render Rows
+            let rowsHTML = '';
+
+            // 1. Character Rotation Action Tracks
+            state.characters.forEach((char, idx) => {
+                const colors = ['border-amber-500/40', 'border-purple-500/40', 'border-emerald-500/40', 'border-red-500/40'];
+                const bgColors = ['bg-amber-500/20 text-amber-300', 'bg-purple-500/20 text-purple-300', 'bg-emerald-500/20 text-emerald-300', 'bg-red-500/20 text-red-300'];
+
+                const startPct = (char.fieldStart / rotTime) * 100;
+                const widthPct = (char.fieldDuration / rotTime) * 100;
+
+                rowsHTML += `
+                    <div class="flex items-center gap-2 text-xs">
+                        <div class="w-32 font-semibold text-slate-300 truncate">${char.name}</div>
+                        <div class="flex-1 h-8 bg-slate-950/80 border border-slate-800 rounded-lg relative timeline-grid overflow-hidden">
+                            <!-- Character Field Block -->
+                            <div class="absolute top-1 bottom-1 ${bgColors[idx]} border ${colors[idx]} rounded px-2 text-[10px] flex items-center justify-between font-mono draggable-block"
+                                 style="left: ${startPct}%; width: ${widthPct}%;"
+                                 title="拖移或點擊設定登場起止時間">
+                                <span>站場 (${char.fieldStart}s - ${char.fieldStart + char.fieldDuration}s)</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+
+            // 2. Active Buff Timeline Tracks
+            rowsHTML += `<div class="pt-2 border-t border-slate-800/80 font-bold text-xs text-slate-400">團隊 Buff 生效時間條 (可點擊微調起止秒數)</div>`;
+
+            state.buffTimeline.forEach((buff, idx) => {
+                const startPct = (buff.start / rotTime) * 100;
+                const widthPct = (buff.duration / rotTime) * 100;
+
+                rowsHTML += `
+                    <div class="flex items-center gap-2 text-xs">
+                        <div class="w-32 text-slate-400 text-[11px] truncate">${buff.name}</div>
+                        <div class="flex-1 h-7 bg-slate-950/80 border border-slate-800 rounded-lg relative timeline-grid">
+                            <div class="absolute top-1 bottom-1 ${buff.color} text-slate-950 font-bold rounded px-2 text-[10px] flex items-center justify-between font-mono shadow"
+                                 style="left: ${startPct}%; width: ${widthPct}%;">
+                                <span>${buff.name} (${buff.start}s ~ ${buff.start + buff.duration}s)</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+
+            rowsContainer.innerHTML = rowsHTML;
+        }
+
+        // Render Hits Inputs inside Character Cards
+        function renderCharacterHitsInputs() {
+            document.querySelectorAll('.character-card').forEach((card, cIdx) => {
+                const char = state.characters[cIdx];
+                if (!char) return;
+
+                const container = card.querySelector('.hits-container');
+                if (!container) return;
+
+                let html = '';
+                char.hits.forEach((hit, hIdx) => {
+                    html += `
+                        <div class="flex items-center gap-1 bg-slate-900 border border-slate-800 p-1.5 rounded text-[11px]">
+                            <input type="text" value="${hit.name}" class="hit-name w-24 bg-slate-950 border border-slate-700 rounded px-1 text-slate-200" data-cidx="${cIdx}" data-hidx="${hIdx}">
+                            <input type="number" value="${hit.multiplierPct}" class="hit-mult w-12 bg-slate-950 border border-slate-700 rounded px-1 text-right font-mono" data-cidx="${cIdx}" data-hidx="${hIdx}" title="倍率%">
+                            <span class="text-slate-500">%</span>
+                            <input type="number" value="${hit.timeSec}" step="0.5" class="hit-time w-12 bg-slate-950 border border-slate-700 rounded px-1 text-right font-mono" data-cidx="${cIdx}" data-hidx="${hIdx}" title="觸發時間(s)">
+                            <span class="text-slate-500">s</span>
+                            <select class="hit-reaction bg-slate-950 border border-slate-700 rounded px-1 text-[10px] text-amber-300" data-cidx="${cIdx}" data-hidx="${hIdx}">
+                                <option value="none" ${hit.reaction === 'none' ? 'selected' : ''}>無反應</option>
+                                <option value="vape1.5" ${hit.reaction === 'vape1.5' ? 'selected' : ''}>蒸發 1.5x</option>
+                                <option value="vape2.0" ${hit.reaction === 'vape2.0' ? 'selected' : ''}>蒸發 2.0x</option>
+                                <option value="melt1.5" ${hit.reaction === 'melt1.5' ? 'selected' : ''}>融化 1.5x</option>
+                                <option value="melt2.0" ${hit.reaction === 'melt2.0' ? 'selected' : ''}>融化 2.0x</option>
+                                <option value="aggravate" ${hit.reaction === 'aggravate' ? 'selected' : ''}>超激化</option>
+                                <option value="spread" ${hit.reaction === 'spread' ? 'selected' : ''}>蔓激化</option>
+                                <option value="swirl" ${hit.reaction === 'swirl' ? 'selected' : ''}>風擴散(劇變)</option>
+                                <option value="hyperbloom" ${hit.reaction === 'hyperbloom' ? 'selected' : ''}>超綻放(劇變)</option>
+                                <option value="moontide" ${hit.reaction === 'moontide' ? 'selected' : ''}>月曜反應</option>
+                                <option value="starspark" ${hit.reaction === 'starspark' ? 'selected' : ''}>星鑠反應</option>
+                            </select>
+                            <button class="btn-del-hit text-red-400 hover:text-red-300 font-bold px-1 ml-auto" data-cidx="${cIdx}" data-hidx="${hIdx}">✕</button>
+                        </div>
+                    `;
+                });
+                container.innerHTML = html;
+
+                // Event Listeners for Dynamic Hits
+                card.querySelectorAll('.hit-name, .hit-mult, .hit-time, .hit-reaction').forEach(el => {
+                    el.addEventListener('change', (e) => {
+                        const c = parseInt(e.target.dataset.cidx);
+                        const h = parseInt(e.target.dataset.hidx);
+                        if (e.target.classList.contains('hit-name')) state.characters[c].hits[h].name = e.target.value;
+                        if (e.target.classList.contains('hit-mult')) state.characters[c].hits[h].multiplierPct = parseFloat(e.target.value) || 0;
+                        if (e.target.classList.contains('hit-time')) state.characters[c].hits[h].timeSec = parseFloat(e.target.value) || 0;
+                        if (e.target.classList.contains('hit-reaction')) state.characters[c].hits[h].reaction = e.target.value;
+                        calculateAndUpdate();
+                    });
+                });
+
+                card.querySelectorAll('.btn-del-hit').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        const c = parseInt(e.target.dataset.cidx);
+                        const h = parseInt(e.target.dataset.hidx);
+                        state.characters[c].hits.splice(h, 1);
+                        renderCharacterHitsInputs();
+                        calculateAndUpdate();
+                    });
+                });
+
+                const addBtn = card.querySelector('.btn-add-hit');
+                if (addBtn) {
+                    addBtn.onclick = () => {
+                        state.characters[cIdx].hits.push({
+                            name: '新技能 Hit',
+                            talentType: 'E',
+                            multiplierPct: 200,
+                            timeSec: 10,
+                            reaction: 'none'
+                        });
+                        renderCharacterHitsInputs();
+                        calculateAndUpdate();
+                    };
+                }
+            });
+        }
+
+        // Genshin Core Formulas & Calculation Engine
+        function calculateAndUpdate() {
+            // Read UI values into state
+            const enemyLvl = parseFloat(document.getElementById('enemy-level').value) || 90;
+            const enemyResBase = (parseFloat(document.getElementById('enemy-res').value) || 10) / 100;
+            const enemyDefShred = (parseFloat(document.getElementById('enemy-def-shred').value) || 0) / 100;
+            const enemyResShred = (parseFloat(document.getElementById('enemy-res-shred').value) || 0) / 100;
+
+            const pyroResActive = document.getElementById('buff-pyro-res').checked;
+            const noblesseActive = document.getElementById('buff-noblesse').checked;
+            const viridescentActive = document.getElementById('buff-viridescent').checked;
+            const thrillingActive = document.getElementById('buff-thrilling').checked;
+
+            const moontideMult = parseFloat(document.getElementById('reaction-moontide-mult').value) || 1.25;
+            const starsparkFlat = parseFloat(document.getElementById('reaction-starspark-flat').value) || 1800;
+
+            // Collect character card stat inputs
+            document.querySelectorAll('.character-card').forEach((card, idx) => {
+                const char = state.characters[idx];
+                if (!char) return;
+
+                char.name = card.querySelector('.char-name').value;
+                char.element = card.querySelector('.char-element').value;
+                char.scaling = card.querySelector('.char-scaling').value;
+                char.baseAtk = parseFloat(card.querySelector('.char-base-atk').value) || 0;
+                char.level = parseFloat(card.querySelector('.char-level').value) || 90;
+
+                const atkPctEl = card.querySelector('.stat-atk-pct');
+                const flatAtkEl = card.querySelector('.stat-flat-atk');
+                const critRateEl = card.querySelector('.stat-crit-rate');
+                const critDmgEl = card.querySelector('.stat-crit-dmg');
+                const dmgBonusEl = card.querySelector('.stat-dmg-bonus');
+                const emEl = card.querySelector('.stat-em');
+
+                char.atkPct = atkPctEl ? (parseFloat(atkPctEl.value) || 0) : 0;
+                char.flatAtk = flatAtkEl ? (parseFloat(flatAtkEl.value) || 0) : 0;
+                char.critRate = critRateEl ? (parseFloat(critRateEl.value) || 0) : 0;
+                char.critDmg = critDmgEl ? (parseFloat(critDmgEl.value) || 0) : 0;
+                char.dmgBonus = dmgBonusEl ? (parseFloat(dmgBonusEl.value) || 0) : 0;
+                char.em = emEl ? (parseFloat(emEl.value) || 0) : 0;
+            });
+
+            // Defense Multiplier
+            const charLvl = 90;
+            const defMult = (charLvl + 100) / ((charLvl + 100) + (enemyLvl + 100) * (1 - enemyDefShred));
+
+            // Level Multiplier for Transformative Reactions (Lv 90 = 1446.85)
+            const levelMult90 = 1446.85;
+
+            let totalRotationExpDmg = 0;
+            let characterDamageSum = [0, 0, 0, 0];
+            let activeBuffCountSum = 0;
+            let totalHitsCalculated = 0;
+
+            const tableBody = document.getElementById('damage-table-body');
+            let tableHTML = '';
+
+            // Iterate over all hits
+            state.characters.forEach((char, cIdx) => {
+                char.hits.forEach((hit) => {
+                    totalHitsCalculated++;
+                    const hitTime = hit.timeSec;
+
+                    // Check active buffs on timeline for this hit
+                    let bennettActive = state.buffTimeline.some(b => b.id === 'bennett_q' && hitTime >= b.start && hitTime <= (b.start + b.duration));
+                    let saraActive = state.buffTimeline.some(b => b.id === 'sara_buff' && hitTime >= b.start && hitTime <= (b.start + b.duration));
+                    let vvActive = viridescentActive || state.buffTimeline.some(b => b.id === 'vv_shred' && hitTime >= b.start && hitTime <= (b.start + b.duration));
+
+                    let activeBuffNames = [];
+                    if (bennettActive) activeBuffNames.push('班尼特Q (+1000 ATK)');
+                    if (saraActive) activeBuffNames.push('九條E/Q (+爆傷/ATK)');
+                    if (vvActive) activeBuffNames.push('風套4 (-40%抗)');
+                    if (pyroResActive) activeBuffNames.push('雙火 (+25%ATK)');
+                    if (noblesseActive) activeBuffNames.push('宗室 (+20%ATK)');
+
+                    if (activeBuffNames.length > 0) activeBuffCountSum++;
+
+                    // Calculate total ATK
+                    let totalAtkPct = char.atkPct + (pyroResActive ? 25 : 0) + (noblesseActive ? 20 : 0) + (thrillingActive && cIdx === 0 ? 48 : 0);
+                    let flatAtkBonus = char.flatAtk + (bennettActive ? 1000 : 0) + (saraActive ? 700 : 0);
+                    let totalATK = char.baseAtk * (1 + totalAtkPct / 100) + flatAtkBonus;
+
+                    // Resistance Multiplier
+                    let finalResShred = enemyResShred + (vvActive ? 0.40 : 0);
+                    let netRes = enemyResBase - finalResShred;
+                    let resMult = netRes < 0 ? (1 - netRes / 2) : (netRes > 0.75 ? 1 / (4 * netRes + 1) : (1 - netRes));
+
+                    // Reaction & Special Multipliers
+                    let rxMult = 1.0;
+                    let flatBonusDmg = 0;
+                    let isTransformative = false;
+
+                    if (hit.reaction === 'vape1.5' || hit.reaction === 'melt1.5') {
+                        const emBonus = (2.78 * char.em) / (char.em + 1400);
+                        rxMult = 1.5 * (1 + emBonus);
+                    } else if (hit.reaction === 'vape2.0' || hit.reaction === 'melt2.0') {
+                        const emBonus = (2.78 * char.em) / (char.em + 1400);
+                        rxMult = 2.0 * (1 + emBonus);
+                    } else if (hit.reaction === 'aggravate') {
+                        flatBonusDmg = levelMult90 * 1.15 * (1 + (5 * char.em) / (char.em + 1200));
+                    } else if (hit.reaction === 'spread') {
+                        flatBonusDmg = levelMult90 * 1.25 * (1 + (5 * char.em) / (char.em + 1200));
+                    } else if (hit.reaction === 'moontide') {
+                        rxMult = moontideMult;
+                    } else if (hit.reaction === 'starspark') {
+                        flatBonusDmg = starsparkFlat;
+                    } else if (hit.reaction === 'hyperbloom') {
+                        isTransformative = true;
+                        const emBonus = (16 * char.em) / (char.em + 2000);
+                        const transformDmg = levelMult90 * 3.0 * (1 + emBonus) * resMult;
+                        
+                        const nonCrit = Math.round(transformDmg);
+                        const crit = nonCrit;
+                        const exp = nonCrit;
+                        const rotationTotal = exp * 2;
+
+                        totalRotationExpDmg += rotationTotal;
+                        characterDamageSum[cIdx] += rotationTotal;
+
+                        tableHTML += `
+                            <tr class="hover:bg-slate-800/50">
+                                <td class="px-3 py-2 font-medium text-slate-200">${char.name}</td>
+                                <td class="px-3 py-2">${hit.name}</td>
+                                <td class="px-3 py-2 font-mono text-slate-400">${hit.timeSec}s</td>
+                                <td class="px-3 py-2 font-mono">-</td>
+                                <td class="px-3 py-2 text-emerald-400 font-medium">超綻放(劇變)</td>
+                                <td class="px-3 py-2 text-[10px] text-slate-400">${activeBuffNames.join(', ') || '無'}</td>
+                                <td class="px-3 py-2 text-right font-mono">${nonCrit.toLocaleString()}</td>
+                                <td class="px-3 py-2 text-right font-mono">${crit.toLocaleString()}</td>
+                                <td class="px-3 py-2 text-right font-mono font-bold text-amber-300">${exp.toLocaleString()}</td>
+                                <td class="px-3 py-2 text-right font-mono font-bold text-indigo-300">${rotationTotal.toLocaleString()}</td>
+                            </tr>
+                        `;
+                        return;
+                    } else if (hit.reaction === 'swirl') {
+                        isTransformative = true;
+                        const emBonus = (16 * char.em) / (char.em + 2000);
+                        const transformDmg = levelMult90 * 0.6 * (1 + emBonus) * resMult;
+
+                        const nonCrit = Math.round(transformDmg);
+                        const exp = nonCrit;
+                        const rotationTotal = exp * 2;
+
+                        totalRotationExpDmg += rotationTotal;
+                        characterDamageSum[cIdx] += rotationTotal;
+
+                        tableHTML += `
+                            <tr class="hover:bg-slate-800/50">
+                                <td class="px-3 py-2 font-medium text-slate-200">${char.name}</td>
+                                <td class="px-3 py-2">${hit.name}</td>
+                                <td class="px-3 py-2 font-mono text-slate-400">${hit.timeSec}s</td>
+                                <td class="px-3 py-2 font-mono">-</td>
+                                <td class="px-3 py-2 text-emerald-400 font-medium">風擴散(劇變)</td>
+                                <td class="px-3 py-2 text-[10px] text-slate-400">${activeBuffNames.join(', ') || '無'}</td>
+                                <td class="px-3 py-2 text-right font-mono">${nonCrit.toLocaleString()}</td>
+                                <td class="px-3 py-2 text-right font-mono">${nonCrit.toLocaleString()}</td>
+                                <td class="px-3 py-2 text-right font-mono font-bold text-amber-300">${exp.toLocaleString()}</td>
+                                <td class="px-3 py-2 text-right font-mono font-bold text-indigo-300">${rotationTotal.toLocaleString()}</td>
+                            </tr>
+                        `;
+                        return;
+                    }
+
+                    // Direct Damage Calculation
+                    let baseDmg = (totalATK * (hit.multiplierPct / 100)) + flatBonusDmg;
+                    let dmgBonusMult = 1 + (char.dmgBonus / 100);
+
+                    let nonCritDmg = baseDmg * dmgBonusMult * rxMult * defMult * resMult;
+
+                    let effectiveCritRate = Math.min(Math.max(char.critRate / 100, 0), 1.0);
+                    let effectiveCritDmg = (char.critDmg + (saraActive ? 60 : 0)) / 100;
+
+                    let critDmg = nonCritDmg * (1 + effectiveCritDmg);
+                    let expDmg = nonCritDmg * (1 + effectiveCritRate * effectiveCritDmg);
+
+                    let rotationTotal = Math.round(expDmg) * 2; // 2 Rotations
+
+                    totalRotationExpDmg += rotationTotal;
+                    characterDamageSum[cIdx] += rotationTotal;
+
+                    tableHTML += `
+                        <tr class="hover:bg-slate-800/50">
+                            <td class="px-3 py-2 font-medium text-slate-200">${char.name}</td>
+                            <td class="px-3 py-2">${hit.name}</td>
+                            <td class="px-3 py-2 font-mono text-slate-400">${hit.timeSec}s</td>
+                            <td class="px-3 py-2 font-mono">${hit.multiplierPct}%</td>
+                            <td class="px-3 py-2 text-amber-400 font-medium">${hit.reaction}</td>
+                            <td class="px-3 py-2 text-[10px] text-slate-400">${activeBuffNames.join(', ') || '無'}</td>
+                            <td class="px-3 py-2 text-right font-mono">${Math.round(nonCritDmg).toLocaleString()}</td>
+                            <td class="px-3 py-2 text-right font-mono">${Math.round(critDmg).toLocaleString()}</td>
+                            <td class="px-3 py-2 text-right font-mono font-bold text-amber-300">${Math.round(expDmg).toLocaleString()}</td>
+                            <td class="px-3 py-2 text-right font-mono font-bold text-indigo-300">${rotationTotal.toLocaleString()}</td>
+                        </tr>
+                    `;
+                });
+            });
+
+            tableBody.innerHTML = tableHTML || `<tr><td colspan="10" class="text-center py-4 text-slate-500">尚無技能 Hit 資料</td></tr>`;
+
+            // Update Top Metrics
+            const teamDPS = Math.round(totalRotationExpDmg / state.rotationTime);
+            document.getElementById('metric-team-dps').textContent = teamDPS.toLocaleString();
+            document.getElementById('metric-total-dpr').textContent = totalRotationExpDmg.toLocaleString();
+
+            // Find top DPS character
+            let topIdx = 0;
+            let maxDmg = 0;
+            characterDamageSum.forEach((dmg, idx) => {
+                if (dmg > maxDmg) {
+                    maxDmg = dmg;
+                    topIdx = idx;
+                }
+            });
+
+            if (maxDmg > 0) {
+                const sharePct = Math.round((maxDmg / totalRotationExpDmg) * 100);
+                document.getElementById('metric-top-dps').textContent = state.characters[topIdx].name;
+                document.getElementById('metric-top-dps-share').textContent = `輸出占比: ${sharePct}% (${maxDmg.toLocaleString()})`;
+            } else {
+                document.getElementById('metric-top-dps').textContent = '無數據';
+                document.getElementById('metric-top-dps-share').textContent = '占比: 0%';
+            }
+
+            // Buff Coverage Metric
+            const avgBuffCoverage = totalHitsCalculated > 0 ? Math.round((activeBuffCountSum / totalHitsCalculated) * 100) : 0;
+            document.getElementById('metric-buff-coverage').textContent = `${avgBuffCoverage}%`;
+        }
+    </script>
+</body>
+</html>
